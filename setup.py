@@ -29,6 +29,7 @@ setuptools.setup(
         'cloudify_vsphere.datastore',
         'cloudify_vsphere.cluster',
         'cloudify_vsphere.utils',
+        'cloudify_vsphere.vendored',
         'cloudify_vsphere.vendored.collections',
     ],
     license='LICENSE',

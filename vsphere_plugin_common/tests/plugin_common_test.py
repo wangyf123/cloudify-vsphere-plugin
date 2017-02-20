@@ -109,6 +109,9 @@ class WebServer(object):
 class VspherePluginsCommonTests(unittest.TestCase):
     if hasattr(ssl, '_create_default_https_context'):
         _base_ssl_context = ssl.create_default_context()
+        _new_ssl = True
+    else:
+        _new_ssl = False
 
     def _make_mock_host(
         self,
@@ -2075,8 +2078,8 @@ class VspherePluginsCommonTests(unittest.TestCase):
             server.obj.customValue.__len__.return_value
         )
 
-    def _find_deprecation_message(self, mock_ctx, expected_information=()):
-        found_expected_message = False
+    def _find_deprecation_message(self, mock_ctx, expected_information=(),
+                                  expect_present=True):
         for message in mock_ctx.logger.warn.call_args_list:
             # call args [0] is
             if 'message' in message[1]:
@@ -2087,12 +2090,17 @@ class VspherePluginsCommonTests(unittest.TestCase):
                 message = message[0][0].lower()
 
             if 'deprecated' in message.lower():
-                if all(expected in message
-                       for expected in expected_information):
-                    found_expected_message = True
-                    break
-
-        return found_expected_message
+                for expected in expected_information:
+                    assert expected in message, (
+                        'Expected {mod}to find {exp} in "{msg}", but '
+                        'failed!'.format(
+                            mod='not ' if not expect_present else '',
+                            exp=expected,
+                            msg=message,
+                        )
+                    )
+                # We either just found the message or raised AssertionError
+                break
 
     def _make_ssl_test_conn(self,
                             ctx,
@@ -2150,16 +2158,17 @@ class VspherePluginsCommonTests(unittest.TestCase):
                 raise
 
         if expected_warn_message_contents:
-            self.assertTrue(self._find_deprecation_message(
+            self._find_deprecation_message(
                 mock_ctx=ctx,
                 expected_information=expected_warn_message_contents,
-            ))
+            )
 
         if unexpected_warn_message_contents:
-            self.assertFalse(self._find_deprecation_message(
+            self._find_deprecation_message(
+                expect_present=False,
                 mock_ctx=ctx,
                 expected_information=unexpected_warn_message_contents,
-            ))
+            )
 
     @patch('vsphere_plugin_common.ctx')
     def test_conect_allow_insecure_with_certificate_path(self, mock_ctx):
@@ -2242,57 +2251,89 @@ class VspherePluginsCommonTests(unittest.TestCase):
     @patch('vsphere_plugin_common.ctx')
     def test_connect_with_bad_certificate_path(self, mock_ctx):
         with WebServer():
-            self._make_ssl_test_conn(
-                cert_path='path/that/is/not/real',
-                complain_on_success=True,
-                expected_nre_message_contents=(
+            if self._new_ssl:
+                expected_nre_message = (
                     'certificate',
                     'not found',
                     'path/that/is/not/real',
-                ),
+                )
+            else:
+                expected_nre_message = (
+                    'cannot create secure connection',
+                    'at least python 2.7.9',
+                )
+
+            self._make_ssl_test_conn(
+                cert_path='path/that/is/not/real',
+                complain_on_success=True,
+                expected_nre_message_contents=expected_nre_message,
                 ctx=mock_ctx,
             )
 
     @patch('vsphere_plugin_common.ctx')
     def test_connect_with_cert_path_not_file(self, mock_ctx):
         with WebServer():
-            self._make_ssl_test_conn(
-                cert_path='sdk/',
-                complain_on_success=True,
-                expected_nre_message_contents=(
+            if self._new_ssl:
+                expected_nre_message = (
                     'certificate_path',
                     'must be a file',
                     'sdk/',
-                ),
+                )
+            else:
+                expected_nre_message = (
+                    'cannot create secure connection',
+                    'at least python 2.7.9',
+                )
+
+            self._make_ssl_test_conn(
+                cert_path='sdk/',
+                complain_on_success=True,
+                expected_nre_message_contents=expected_nre_message,
                 ctx=mock_ctx,
             )
 
     @patch('vsphere_plugin_common.ctx')
     def test_connect_with_bad_cert_file(self, mock_ctx):
         with WebServer():
-            self._make_ssl_test_conn(
-                cert_path='badcert.pem',
-                complain_on_success=True,
-                expected_nre_message_contents=(
+            if self._new_ssl:
+                expected_nre_message = (
                     'could not connect',
                     'badcert.pem',
                     'not valid',
-                ),
+                )
+            else:
+                expected_nre_message = (
+                    'cannot create secure connection',
+                    'at least python 2.7.9',
+                )
+
+            self._make_ssl_test_conn(
+                cert_path='badcert.pem',
+                complain_on_success=True,
+                expected_nre_message_contents=expected_nre_message,
                 ctx=mock_ctx,
             )
 
     @patch('vsphere_plugin_common.ctx')
     def test_connect_with_bad_cert_file_not_a_cert(self, mock_ctx):
         with WebServer():
-            self._make_ssl_test_conn(
-                cert_path='sdk/vimService.wsdl',
-                complain_on_success=True,
-                expected_nre_message_contents=(
+            if self._new_ssl:
+                expected_nre_message = (
                     'could not create ssl context',
                     'sdk/vimservice.wsdl',
                     'correct format',
                     'pem',
-                ),
+                )
+            else:
+                expected_nre_message = (
+                    'cannot create secure connection',
+                    'at least python 2.7.9',
+                )
+
+            self._make_ssl_test_conn(
+                cert_path='sdk/vimService.wsdl',
+                complain_on_success=True,
+                expected_nre_message_contents=expected_nre_message,
                 ctx=mock_ctx,
             )
 
@@ -2334,14 +2375,25 @@ class VspherePluginsCommonTests(unittest.TestCase):
     @patch('vsphere_plugin_common.ctx')
     def test_two_connections_wrong_then_right(self, mock_ctx):
         with WebServer():
-            self._make_ssl_test_conn(
-                cert_path='badcert.pem',
-                complain_on_success=True,
-                expected_nre_message_contents=(
+            if self._new_ssl:
+                expected_warn_message = ()
+                expected_bad_nre = (
                     'could not connect',
                     'badcert.pem',
                     'not valid',
-                ),
+                )
+            else:
+                expected_warn_message = (
+                    'cannot create secure connection',
+                    'at least python 2.7.9',
+                )
+                expected_bad_nre = ()
+
+            self._make_ssl_test_conn(
+                cert_path='badcert.pem',
+                complain_on_success=True,
+                expected_warn_message_contents=expected_warn_message,
+                expected_nre_message_contents=expected_bad_nre,
                 ctx=mock_ctx,
             )
 
@@ -2349,41 +2401,66 @@ class VspherePluginsCommonTests(unittest.TestCase):
                 cert_path='public.pem',
                 complain_on_success=False,
                 expect_verify_fail=False,
+                expected_warn_message_contents=expected_warn_message,
                 ctx=mock_ctx,
             )
 
     @patch('vsphere_plugin_common.ctx')
     def test_two_connections_right_then_wrong(self, mock_ctx):
         with WebServer():
+            if self._new_ssl:
+                expected_warn_message = ()
+                expected_bad_nre = (
+                    'could not connect',
+                    'badcert.pem',
+                    'not valid',
+                )
+            else:
+                expected_warn_message = (
+                    'cannot create secure connection',
+                    'at least python 2.7.9',
+                )
+                expected_bad_nre = ()
+
             self._make_ssl_test_conn(
                 cert_path='public.pem',
                 complain_on_success=False,
                 expect_verify_fail=False,
+                expected_warn_message_contents=expected_warn_message,
                 ctx=mock_ctx,
             )
 
             self._make_ssl_test_conn(
                 cert_path='badcert.pem',
                 complain_on_success=True,
-                expected_nre_message_contents=(
-                    'could not connect',
-                    'badcert.pem',
-                    'not valid',
-                ),
+                expected_warn_message_contents=expected_warn_message,
+                expected_nre_message_contents=expected_bad_nre,
                 ctx=mock_ctx,
             )
 
     @patch('vsphere_plugin_common.ctx')
     def test_two_connections_no_path_then_good_path(self, mock_ctx):
         with WebServer():
+            expected_warn_message = (
+                'certificate_path',
+                'will be required',
+                'allow_insecure',
+                'not set to true',
+            )
+
             self._make_ssl_test_conn(
                 complain_on_success=True,
-                expected_warn_message_contents=(
-                    'certificate_path',
-                    'will be required',
-                ),
+                expected_warn_message_contents=expected_warn_message,
                 ctx=mock_ctx,
             )
+
+            if self._new_ssl:
+                expected_warn_message = ()
+            else:
+                expected_warn_message = (
+                    'cannot create secure connection',
+                    'at least python 2.7.9',
+                )
 
             self._make_ssl_test_conn(
                 cert_path='public.pem',
@@ -2395,23 +2472,40 @@ class VspherePluginsCommonTests(unittest.TestCase):
     @patch('vsphere_plugin_common.ctx')
     def test_two_connections_no_path_then_bad_cert(self, mock_ctx):
         with WebServer():
-            self._make_ssl_test_conn(
-                complain_on_success=True,
-                expected_warn_message_contents=(
+            if self._new_ssl:
+                expected_warn_message = (
                     'certificate_path',
                     'will be required',
-                ),
+                    'allow_insecure',
+                    'not set to true',
+                )
+                expected_bad_nre = (
+                    'could not connect',
+                    'badcert.pem',
+                    'not valid',
+                )
+            else:
+                expected_warn_message = (
+                    'certificate_path',
+                    'will be required',
+                    'allow_insecure',
+                    'not set to true',
+                )
+                expected_bad_nre = (
+                    'cannot create secure connection',
+                    'at least python 2.7.9',
+                )
+
+            self._make_ssl_test_conn(
+                complain_on_success=True,
+                expected_warn_message_contents=expected_warn_message,
                 ctx=mock_ctx,
             )
 
             self._make_ssl_test_conn(
                 cert_path='badcert.pem',
                 complain_on_success=True,
-                expected_nre_message_contents=(
-                    'could not connect',
-                    'badcert.pem',
-                    'not valid',
-                ),
+                expected_nre_message_contents=expected_bad_nre,
                 ctx=mock_ctx,
             )
 

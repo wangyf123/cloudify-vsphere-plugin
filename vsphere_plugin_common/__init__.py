@@ -243,7 +243,7 @@ class VsphereClient(object):
                     ssl._create_unverified_context
                 )
         else:
-            logger().warn(
+            ctx.logger.warn(
                 'DEPRECATED: certificate_path was not supplied. '
                 'A certificate will be required in the next major '
                 'release of the plugin if allow_insecure is not set '
