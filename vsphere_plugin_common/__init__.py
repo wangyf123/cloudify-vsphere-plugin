@@ -17,7 +17,6 @@ from __future__ import division
 
 # Stdlib imports
 import atexit
-import logging
 import os
 import re
 import ssl
@@ -45,18 +44,7 @@ from vsphere_plugin_common.constants import (
     TASK_CHECK_SLEEP,
 )
 from cloudify_vsphere.vendored.collections import namedtuple
-from cloudify_vsphere.utils.feedback import prepare_for_log
-
-
-def logger():
-    try:
-        logger = ctx.logger
-    except RuntimeError as e:
-        if 'No context' in str(e):
-            logger = logging.getLogger()
-        else:
-            raise
-    return logger
+from cloudify_vsphere.utils.feedback import logger, prepare_for_log
 
 
 def get_ip_from_vsphere_nic_ips(nic):
